@@ -245,13 +245,12 @@ void tbcm_360_3000_he_dri_select_device(struct tbcm_360_3000_he_dri *self,
 	if (serial_no != NULL) {
 		if (_tbcm_360_3000_he_dri_validate_serial_no(serial_no))
 		{
-			(void)memcpy(self->_serial_no, serial_no, 6);
+			(void)memcpy(self->_serial_no, serial_no, 6U * 2U);
 			is_valid_serial_no = true;
 		}
 	} else {
 		if (_tbcm_360_3000_he_dri_validate_serial_no(self->_serial_no))
 		{
-			self->_state = TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE;
 			is_valid_serial_no = true;
 		}
 	}
