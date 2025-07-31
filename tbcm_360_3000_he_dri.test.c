@@ -45,11 +45,27 @@ int main()
 					      TBCM_360_3000_HE_DRI_EVENT_NONE);
 	assert(dri._state == TBCM_360_3000_HE_DRI_STATE_FAULT);
 
+	/* No frames should be sent to device YET */
+	assert(tbcm_360_3000_he_dri_read_frame(&dri, &frame) == false);
+
 	/* Should succed */
 	tbcm_360_3000_he_dri_select_device(&dri, "012345678900");
 	assert(tbcm_360_3000_he_dri_update(&dri, 0) == 
 					      TBCM_360_3000_HE_DRI_EVENT_NONE);					
 	assert(dri._state == TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE);
+
+	/* Only one frame should be received */
+	assert(tbcm_360_3000_he_dri_read_frame(&dri, &frame) == true);
+	assert(tbcm_360_3000_he_dri_read_frame(&dri, &frame) == false);
+
+	assert(frame.id  == 0x351U);
+	assert(frame.len == 6U);
+	assert(frame.data[0] == 0x01);
+	assert(frame.data[1] == 0x23);
+	assert(frame.data[2] == 0x45);
+	assert(frame.data[3] == 0x67);
+	assert(frame.data[4] == 0x89);
+	assert(frame.data[5] == 0x00);
 
 	return 0;
 }
