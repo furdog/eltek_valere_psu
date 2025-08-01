@@ -1,7 +1,7 @@
 /** This driver implements minimal, hardware agnostic, asynchronous,
  *	CAN2.0, low-level device driver for Eltek Valere PSU
  *
- * 
+ *
  * Part name:  TBCM 360/3000 HE
  * Part No:    241121.000
  * Batch No:   794033
@@ -11,17 +11,17 @@
  * AC Current: 14Amax
  * AC Fuse:    25A F
  * DC Output:  250-420V/10Amax
- * 
+ *
  * Revision:   2.1
  * SW: 01.00/01.00
- * 
- * 
+ *
+ *
  * The driver can only communicate with one device at a time, but multiple
  * 	instances of the driver can be run to achieve multiple devices support
- * 
+ *
  * WARNING: the communication protocol is only suitable for TBCM series
  * 	and not compliant with protocol described in Doc No. 2086930
- * 
+ *
  * WARNING: the driver is not tested on real hardware YET
  */
 
@@ -137,15 +137,15 @@ void _tbcm_360_3000_he_dri_stringify_serial_no(
 	uint8_t byte_value;
 
 	/* Lookup table for hex digits */
-	const char hex_chars[] = "0123456789ABCDEF"; 
- 
+	const char hex_chars[] = "0123456789ABCDEF";
+
 	for (i = 0U; i < 6U; i++) {
 		byte_value = serial_no[i];
 
-		self->_serial_no[i * 2U] = 
+		self->_serial_no[i * 2U] =
 					 hex_chars[(byte_value >> 4U) & 0x0FU];
 
-		self->_serial_no[(i * 2U) + 1U] = 
+		self->_serial_no[(i * 2U) + 1U] =
 					 hex_chars[byte_value & 0x0FU];
 	}
 
@@ -191,7 +191,7 @@ bool _tbcm_360_3000_he_dri_validate_serial_no(const char *serial_no)
 	/* Serial number SHALL only contain 12 decimal digits (not HEX) */
 	for (i = 0U; i < (6U * 2U); i++) {
 		const char c = serial_no[i];
-		
+
 		if ((c < '0') || (c > '9')) {
 			is_valid = false;
 		}
@@ -223,7 +223,7 @@ void _tbcm_360_3000_he_dri_writer_update(struct tbcm_360_3000_he_dri *self,
 	switch (self->_writer.state) {
 	case TBCM_360_3000_HE_DRI_WRITER_STATE_QUERY:
 		self->_serial_no_query_timer += delta_time_ms;
-		
+
 		if (self->_serial_no_query_timer >= 1000U) {
 			self->_serial_no_query_timer = 0U;
 			_tbcm_360_3000_he_dri_writer_send_query(self);
@@ -233,7 +233,7 @@ void _tbcm_360_3000_he_dri_writer_update(struct tbcm_360_3000_he_dri *self,
 
 	case TBCM_360_3000_HE_DRI_WRITER_STATE_ACTIVE:
 		break;
-	
+
 	default:
 		break;
 	}
@@ -257,7 +257,7 @@ void _tbcm_360_3000_he_dri_reader_update(struct tbcm_360_3000_he_dri *self,
 		}
 
 		self->_flags &= ~TBCM_360_3000_HE_DRI_FLAG_RX;
-		
+
 		break;
 
 	case TBCM_360_3000_HE_DRI_READER_STATE_DEVICE_ID:
@@ -315,7 +315,7 @@ void tbcm_360_3000_he_dri_ack_serial_no(struct tbcm_360_3000_he_dri *self,
 					bool accept)
 {
 	/* We should be in valid state */
-	if ((self->_state != 
+	if ((self->_state !=
 	      (uint8_t)TBCM_360_3000_HE_DRI_STATE_LISTEN_DEVICES) ||
 	    (self->_reader.state !=
 	      (uint8_t)TBCM_360_3000_HE_DRI_READER_STATE_DONE)) {
@@ -346,7 +346,7 @@ void tbcm_360_3000_he_dri_ack_device_id(struct tbcm_360_3000_he_dri *self,
 					bool accept)
 {
 	/* We should be in valid state */
-	if ((self->_state != 
+	if ((self->_state !=
 	      (uint8_t)TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE) ||
 	    (self->_reader.state !=
 	      (uint8_t)TBCM_360_3000_HE_DRI_READER_STATE_DONE)) {
@@ -437,7 +437,7 @@ enum tbcm_360_3000_he_dri_event tbcm_360_3000_he_dri_update(
 		e = TBCM_360_3000_HE_DRI_EVENT_FAULT;
 
 		self->_state = TBCM_360_3000_HE_DRI_STATE_LISTEN_DEVICES;
-		self->_reader.state = 
+		self->_reader.state =
 				 TBCM_360_3000_HE_DRI_READER_STATE_SERIAL_NO;
 		break;
 
