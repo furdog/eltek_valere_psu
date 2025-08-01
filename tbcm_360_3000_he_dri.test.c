@@ -33,7 +33,7 @@ int main()
 		      "0123456789AB") == 0U);
 
 	/* Ack serial number */
-	tbcm_360_3000_he_dri_ack_serial_no(&dri);
+	tbcm_360_3000_he_dri_ack_serial_no(&dri, true);
 
 	/* Should fault, since serial_no contains 0xAB */
 	assert(tbcm_360_3000_he_dri_update(&dri, 0U) == 
@@ -49,7 +49,7 @@ int main()
 					TBCM_360_3000_HE_DRI_EVENT_SERIAL_NO);
 	printf("Discovered device serial number: %s\n",
 		tbcm_360_3000_he_dri_get_serial_no(&dri));
-	tbcm_360_3000_he_dri_ack_serial_no(&dri);
+	tbcm_360_3000_he_dri_ack_serial_no(&dri, true);
 	assert(tbcm_360_3000_he_dri_update(&dri, 0U) == 
 					      TBCM_360_3000_HE_DRI_EVENT_NONE);
 	assert(dri._state == TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE);
@@ -89,9 +89,13 @@ int main()
 	printf("Discovered device id: %u\n",
 		tbcm_360_3000_he_dri_get_device_id(&dri));
 
-	tbcm_360_3000_he_dri_ack_device_id(&dri);
+	tbcm_360_3000_he_dri_ack_device_id(&dri, true);
 	assert(tbcm_360_3000_he_dri_update(&dri, 0U) == 
 				       TBCM_360_3000_HE_DRI_EVENT_ESTABLISHED);
+
+	/* Check busy */
+	assert(tbcm_360_3000_he_dri_write_frame(&dri, &frame) == false);
+	assert(tbcm_360_3000_he_dri_write_frame(&dri, &frame) == true);
 
 	return 0;
 }
