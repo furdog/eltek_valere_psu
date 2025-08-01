@@ -35,24 +35,20 @@
  * CLASS
  *****************************************************************************/
 enum tbcm_360_3000_he_dri_state {
-	TBCM_360_3000_HE_DRI_STATE_INIT, /* Initial state */
-
 	/* Listen for devices, log events about detected devices */
 	TBCM_360_3000_HE_DRI_STATE_LISTEN_DEVICES,
 
 	/* Query selected device for info */
 	TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE,
 
-	/* Something gone wrong */
-	TBCM_360_3000_HE_DRI_STATE_FAULT,
+	/* Intermediade state, after device id was acknowledged */
+	TBCM_360_3000_HE_DRI_STATE_ACK_ID,
 
-	/*
-	 * OTHER STATES (communiacation with selected device)
-	 * 
-	 * ...
-	 */
+	/* Communication with device is fully established */
+	TBCM_360_3000_HE_DRI_STATE_ESTABLISHED,
 
-	TBCM_360_3000_HE_DRI_STATE_IDLE
+	/* Something is gone wrong */
+	TBCM_360_3000_HE_DRI_STATE_FAULT = (uint8_t)-1
 };
 
 enum tbcm_360_3000_he_dri_sender_state {
@@ -65,7 +61,16 @@ enum tbcm_360_3000_he_dri_event {
 	TBCM_360_3000_HE_DRI_EVENT_NONE,
 
 	/* Some device reported it's serial number to the bus */
-	TBCM_360_3000_HE_DRI_EVENT_SERIAL_NO
+	TBCM_360_3000_HE_DRI_EVENT_SERIAL_NO,
+
+	/* Some device reported it's identifier to the bus */
+	TBCM_360_3000_HE_DRI_EVENT_DEVICE_ID,
+
+	/* Communication with device is fully established */
+	TBCM_360_3000_HE_DRI_EVENT_ESTABLISHED,
+
+	/* Something went wrong */
+	TBCM_360_3000_HE_DRI_EVENT_FAULT
 };
 
 enum tbcm_360_3000_he_dri_flags {
@@ -86,10 +91,11 @@ struct tbcm_360_3000_he_dri {
 	uint8_t _flags;
 
 	struct tbcm_360_3000_he_dri_frame _frame_rx;
-	struct tbcm_360_3000_he_dri_frame _frame_tx[2];
+	struct tbcm_360_3000_he_dri_frame _frame_tx;
 
 	/* Serial No (as string) */
 	char _serial_no[(6U * 2U) + 1U];
+	uint8_t _device_id;
 
 	uint32_t _serial_no_query_timer;
 };
@@ -170,10 +176,10 @@ bool _tbcm_360_3000_he_dri_validate_serial_no(const char *serial_no)
 void _tbcm_360_3000_he_dri_sender_send_query(struct tbcm_360_3000_he_dri *self)
 {
 	self->_flags |= TBCM_360_3000_HE_DRI_FLAG_TX;
-	self->_frame_tx[0U].id  = 0x351U;
-	self->_frame_tx[0U].len = 6U;
+	self->_frame_tx.id  = 0x351U;
+	self->_frame_tx.len = 6U;
 	_tbcm_360_3000_he_dri_binarize_serial_no(self,
-						 self->_frame_tx[0U].data);
+						 self->_frame_tx.data);
 }
 
 void _tbcm_360_3000_he_dri_sender_start(struct tbcm_360_3000_he_dri *self)
@@ -211,24 +217,18 @@ void _tbcm_360_3000_he_dri_sender_update(struct tbcm_360_3000_he_dri *self,
  *****************************************************************************/
 void tbcm_360_3000_he_dri_init(struct tbcm_360_3000_he_dri *self)
 {
-	self->_state        = TBCM_360_3000_HE_DRI_STATE_IDLE;
-	self->_sender_state = TBCM_360_3000_HE_DRI_STATE_IDLE;
+	self->_state        = TBCM_360_3000_HE_DRI_STATE_LISTEN_DEVICES;
+	self->_sender_state = TBCM_360_3000_HE_DRI_STATE_LISTEN_DEVICES;
 
 	self->_flags = 0U;
 
-	self->_frame_rx.len    = 0U;
-	self->_frame_tx[0].len = 0U;
-	self->_frame_tx[1].len = 0U;
+	self->_frame_rx.len = 0U;
+	self->_frame_tx.len = 0U;
+
+	self->_serial_no[0U] = '\0';
+	self->_device_id     = 0U;
 
 	self->_serial_no_query_timer = 0U;
-}
-
-void tbcm_360_3000_he_dri_start_listen_for_devices(
-					     struct tbcm_360_3000_he_dri *self)
-{
-	self->_state = TBCM_360_3000_HE_DRI_STATE_LISTEN_DEVICES;
-
-	self->_frame_rx.len = 0U;
 }
 
 const char *tbcm_360_3000_he_dri_get_serial_no(
@@ -237,30 +237,28 @@ const char *tbcm_360_3000_he_dri_get_serial_no(
 	return self->_serial_no;
 }
 
-void tbcm_360_3000_he_dri_select_device(struct tbcm_360_3000_he_dri *self,
-					const char *serial_no)
+uint8_t tbcm_360_3000_he_dri_get_device_id(struct tbcm_360_3000_he_dri *self)
 {
-	bool is_valid_serial_no = false;
+	return self->_device_id;
+}
 
-	if (serial_no != NULL) {
-		if (_tbcm_360_3000_he_dri_validate_serial_no(serial_no))
-		{
-			(void)memcpy(self->_serial_no, serial_no, 6U * 2U);
-			is_valid_serial_no = true;
-		}
-	} else {
-		if (_tbcm_360_3000_he_dri_validate_serial_no(self->_serial_no))
-		{
-			is_valid_serial_no = true;
-		}
-	}
-
-	if (is_valid_serial_no) {
+void tbcm_360_3000_he_dri_ack_serial_no(struct tbcm_360_3000_he_dri *self)
+{
+	if (_tbcm_360_3000_he_dri_validate_serial_no(self->_serial_no)) {
 		_tbcm_360_3000_he_dri_sender_start(self);
 
 		self->_state = TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE;
 	} else {
 		self->_state = TBCM_360_3000_HE_DRI_STATE_FAULT;
+	}
+}
+
+void tbcm_360_3000_he_dri_ack_device_id(struct tbcm_360_3000_he_dri *self)
+{
+	if (self->_state != (uint8_t)TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE) {
+		self->_state = TBCM_360_3000_HE_DRI_STATE_FAULT;
+	} else {
+		self->_state = TBCM_360_3000_HE_DRI_STATE_ACK_ID;
 	}
 }
 
@@ -277,16 +275,9 @@ bool tbcm_360_3000_he_dri_read_frame(struct tbcm_360_3000_he_dri *self,
 	bool has_frame = self->_flags & (uint8_t)TBCM_360_3000_HE_DRI_FLAG_TX;
 
 	if (has_frame) {
-		if (self->_frame_tx[0U].len > 0U) {
-			*frame = self->_frame_tx[0U];
-			self->_frame_tx[0U].len = 0U;
-		} else if (self->_frame_tx[1U].len > 0U) {
-			*frame = self->_frame_tx[1U];
-			self->_frame_tx[1U].len = 0U;
-		} else {
-			self->_flags &= ~TBCM_360_3000_HE_DRI_FLAG_TX;
-			has_frame = false;
-		}
+		*frame = self->_frame_tx;
+
+		self->_flags &= ~TBCM_360_3000_HE_DRI_FLAG_TX;
 	}
 
 	return has_frame;
@@ -316,6 +307,34 @@ enum tbcm_360_3000_he_dri_event tbcm_360_3000_he_dri_update(
 
 	case TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE:
 		_tbcm_360_3000_he_dri_sender_update(self, delta_time_ms);
+
+		if ((self->_flags & (uint8_t)TBCM_360_3000_HE_DRI_FLAG_RX) &&
+		    ((self->_frame_rx.id == 0x353U) ||
+		     (self->_frame_rx.id == 0x354U) ||
+		     (self->_frame_rx.id == 0x355U)) &&
+		    (self->_frame_rx.len == 8U)) {
+			e = TBCM_360_3000_HE_DRI_EVENT_DEVICE_ID;
+
+			self->_device_id = self->_frame_rx.data[0];
+
+			self->_flags &= ~TBCM_360_3000_HE_DRI_FLAG_RX;
+		}
+		break;
+
+	case TBCM_360_3000_HE_DRI_STATE_ACK_ID:
+		e = TBCM_360_3000_HE_DRI_EVENT_ESTABLISHED;
+
+		self->_state = TBCM_360_3000_HE_DRI_STATE_ESTABLISHED;
+		break;
+
+	case TBCM_360_3000_HE_DRI_STATE_ESTABLISHED:
+		_tbcm_360_3000_he_dri_sender_update(self, delta_time_ms);
+		break;
+
+	case TBCM_360_3000_HE_DRI_STATE_FAULT:
+		e = TBCM_360_3000_HE_DRI_EVENT_FAULT;
+
+		self->_state = TBCM_360_3000_HE_DRI_STATE_LISTEN_DEVICES;
 		break;
 
 	default:
