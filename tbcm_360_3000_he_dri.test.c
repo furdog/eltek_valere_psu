@@ -1,11 +1,21 @@
 #include "tbcm_360_3000_he_dri.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 struct tbcm_360_3000_he_dri dri;
 
 /* Snapshot to reset dri to previous state */
 struct tbcm_360_3000_he_dri dri_snapshot;
+
+/*#define assert(s)							      \
+do {									      \
+	if (!(s)) {							      \
+		printf("Assertion failed: %s, file %s, line %i\n",	      \
+		       #s, __FILE__, __LINE__);				      \
+		exit(1);						      \
+	}								      \
+} while (0); */
 
 int main()
 {
@@ -32,12 +42,13 @@ int main()
 	assert(strcmp(tbcm_360_3000_he_dri_get_serial_no(&dri),
 		      "0123456789AB") == 0U);
 
-	/* Ack serial number */
-	tbcm_360_3000_he_dri_ack_serial_no(&dri, true);
+	/* Accept serial number */
+	tbcm_360_3000_he_dri_accept_serial_no(&dri);
 
 	/* Should fault, since serial_no contains 0xAB */
 	assert(tbcm_360_3000_he_dri_update(&dri, 0U) == 
 					   TBCM_360_3000_HE_DRI_EVENT_FAULT);
+	printf("Fault location line: %i\n", dri._fault_line);
 
 	/* No frames should be sent to device YET */
 	assert(tbcm_360_3000_he_dri_read_frame(&dri, &frame) == false);
@@ -49,7 +60,7 @@ int main()
 					TBCM_360_3000_HE_DRI_EVENT_SERIAL_NO);
 	printf("Discovered device serial number: %s\n",
 		tbcm_360_3000_he_dri_get_serial_no(&dri));
-	tbcm_360_3000_he_dri_ack_serial_no(&dri, true);
+	tbcm_360_3000_he_dri_accept_serial_no(&dri);
 	assert(tbcm_360_3000_he_dri_update(&dri, 0U) == 
 					      TBCM_360_3000_HE_DRI_EVENT_NONE);
 	assert(dri._state == TBCM_360_3000_HE_DRI_STATE_QUERY_DEVICE);
@@ -89,7 +100,7 @@ int main()
 	printf("Discovered device id: %u\n",
 		tbcm_360_3000_he_dri_get_device_id(&dri));
 
-	tbcm_360_3000_he_dri_ack_device_id(&dri, true);
+	tbcm_360_3000_he_dri_accept_device_id(&dri);
 	assert(tbcm_360_3000_he_dri_update(&dri, 0U) == 
 				       TBCM_360_3000_HE_DRI_EVENT_ESTABLISHED);
 
