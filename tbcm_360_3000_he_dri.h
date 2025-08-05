@@ -33,6 +33,7 @@
 
 #define TBCM_360_3000_HE_DRI_SERIAL_NO_QUERY_INTERVAL_MS 1000U
 #define TBCM_360_3000_HE_DRI_SETTINGS_INTERVAL_MS        100U
+#define TBCM_360_3000_HE_DRI_LINK_TIMEOUT_MS             5000U
 
 /******************************************************************************
  * CLASS
@@ -98,23 +99,16 @@ struct tbcm_360_3000_he_dri_frame {
 	uint8_t  data[8U];
 };
 
-/* Data frames we will actively work with.
- * It contains various runtime PSU parameters (voltage, current, temp, etc) */
-struct tbcm_360_3000_he_dri_data_frames {
-	uint8_t rflags; /* Reception flags (which frames were received?) */
-
-	struct tbcm_360_3000_he_dri_frame x353; /* rflags = 1U << 0U; */
-	struct tbcm_360_3000_he_dri_frame x354; /* rflags = 1U << 1U; */
-	struct tbcm_360_3000_he_dri_frame x355; /* rflags = 1U << 2U; */
-};
-
 /* Automata that is responsible for writing frames onto stream */
 struct tbcm_360_3000_he_dri_writer {
 	bool send_settings; /* Send settings or not? */
 	bool busy; /* No frames should be queued if we're busy */
 
-	/* Current frame we're working on */
+	/* Current(temporary/buffer) frame we're working on */
 	struct tbcm_360_3000_he_dri_frame frame;
+
+	/* Settings frame */
+	struct tbcm_360_3000_he_dri_frame x352;
 
 	/* Timers */
 	uint32_t serial_no_timer_ms; /* Timer for serial_no resend interval */
@@ -127,11 +121,14 @@ struct tbcm_360_3000_he_dri_reader {
 	uint8_t state;
 	bool    busy; /* No frames should be received if we're busy */
 
-	/* Current frame we're working on */
+	/* Current(temporary/buffer) frame we're working on */
 	struct tbcm_360_3000_he_dri_frame frame;
 
 	/* Data frames */
-	struct tbcm_360_3000_he_dri_data_frames data;
+	uint8_t rflags; /* Reception flags (which frames were received?) */
+	struct tbcm_360_3000_he_dri_frame x353; /* rflags = 1U << 0U; */
+	struct tbcm_360_3000_he_dri_frame x354; /* rflags = 1U << 1U; */
+	struct tbcm_360_3000_he_dri_frame x355; /* rflags = 1U << 2U; */
 
 	/* Timers */
 	uint32_t link_timeout_ms; /* Link timeout (no data for too long) */
@@ -237,13 +234,16 @@ void _tbcm_360_3000_he_dri_writer_init(struct tbcm_360_3000_he_dri *self)
 	self->_writer.send_settings = false; /* Do not send settings */
 	self->_writer.busy          = false;
 
+	self->_writer.x352.id  = 0x352U;
+	self->_writer.x352.len = 8U;
+	(void)memset(self->_writer.x352.data, 0U, 8U);
+
 	/* Timers (must trigger immediately after start) */
 	self->_writer.serial_no_timer_ms =
 			      TBCM_360_3000_HE_DRI_SERIAL_NO_QUERY_INTERVAL_MS;
 	self->_writer.settings_timer_ms  =
 				     TBCM_360_3000_HE_DRI_SETTINGS_INTERVAL_MS;
 }
-
 
 void _tbcm_360_3000_he_dri_writer_send_query(struct tbcm_360_3000_he_dri *self)
 {
@@ -260,11 +260,9 @@ void _tbcm_360_3000_he_dri_writer_send_settings(
 					     struct tbcm_360_3000_he_dri *self)
 {
 	if (!self->_writer.busy) {
-		/*self->_writer.busy      = true;
-		self->_writer.frame.id  = 0x352U;
-		self->_writer.frame.len = 8U;*/
-
-		/* TODO */
+		self->_writer.busy  = true;
+		self->_writer.frame = self->_writer.x352;
+		self->_writer.frame.data[0] = self->_device_id;
 	}
 }
 
@@ -300,10 +298,10 @@ void _tbcm_360_3000_he_dri_reader_init(struct tbcm_360_3000_he_dri *self)
 	self->_reader.state = TBCM_360_3000_HE_DRI_READER_STATE_SERIAL_NO;
 	self->_reader.busy  = false;
 
-	self->_reader.data.rflags = 0U;
+	self->_reader.rflags = 0U;
 
 	/* Timers */
-	self->_reader.link_timeout_ms = 1000U; /* TODO constant */
+	self->_reader.link_timeout_ms = TBCM_360_3000_HE_DRI_LINK_TIMEOUT_MS;
 	self->_reader.link_timer_ms   = 0U;
 }
 
@@ -318,7 +316,7 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 
 		/* TODO PARSE FRAME */
 
-		self->_reader.data.rflags |= 1U << 0U;
+		self->_reader.rflags |= 1U << 0U;
 
 		break;
 
@@ -329,7 +327,7 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 
 		/* TODO PARSE FRAME */
 
-		self->_reader.data.rflags |= 1U << 1U;
+		self->_reader.rflags |= 1U << 1U;
 
 		break;
 
@@ -340,7 +338,7 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 
 		/* TODO PARSE FRAME */
 
-		self->_reader.data.rflags |= 1U << 2U;
+		self->_reader.rflags |= 1U << 2U;
 
 		break;
 
@@ -349,9 +347,9 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 	}
 
 	/* Reset timeout timer if all frames were got */
-	if (self->_reader.data.rflags == 7U) {
+	if (self->_reader.rflags == 7U) {
 		self->_reader.link_timer_ms = 0U;
-		self->_reader.data.rflags   = 0U;
+		self->_reader.rflags        = 0U;
 
 		/* We can send settings at this point */
 		self->_writer.send_settings = true;
@@ -506,7 +504,7 @@ void tbcm_360_3000_he_dri_ack_device_id(struct tbcm_360_3000_he_dri *self,
 		self->_state = TBCM_360_3000_HE_DRI_STATE_ACK_ID;
 
 		self->_reader.state = TBCM_360_3000_HE_DRI_READER_STATE_DATA;
-		self->_reader.data.rflags   = 0U;
+		self->_reader.rflags   = 0U;
 		self->_reader.link_timer_ms = 0U;
 
 		/* keep busy true, so DATA state will consume this frame too */

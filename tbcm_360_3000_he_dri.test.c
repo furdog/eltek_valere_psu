@@ -20,7 +20,7 @@ do {									      \
 void check_data_no_timeout(struct tbcm_360_3000_he_dri *dri,
 			   struct tbcm_360_3000_he_dri_frame *frame)
 {
-	assert(tbcm_360_3000_he_dri_update(dri, 999U) == 
+	assert(tbcm_360_3000_he_dri_update(dri, 4999U) == 
 					      TBCM_360_3000_HE_DRI_EVENT_NONE);
 	frame->id  = 0x353U;
 	tbcm_360_3000_he_dri_write_frame(dri, frame);
@@ -124,7 +124,7 @@ int main()
 				       TBCM_360_3000_HE_DRI_EVENT_ESTABLISHED);
 
 	/* Check 0x353 was also parsed as valid data frame */
-	assert(dri._reader.data.rflags == 1U); 
+	assert(dri._reader.rflags == 1U); 
 
 	/* Check busy */
 	assert(tbcm_360_3000_he_dri_write_frame(&dri, &frame) == true);
@@ -133,7 +133,7 @@ int main()
 	/* Check data reception timeout (save snapshot) */
 	dri_snapshot = dri;
 
-	assert(tbcm_360_3000_he_dri_update(&dri, 999U) == 
+	assert(tbcm_360_3000_he_dri_update(&dri, 4999U) == 
 					      TBCM_360_3000_HE_DRI_EVENT_NONE);
 
 	assert(tbcm_360_3000_he_dri_update(&dri, 1U) == 
