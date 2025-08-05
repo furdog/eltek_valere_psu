@@ -148,5 +148,13 @@ int main()
 	check_data_no_timeout(&dri, &frame);
 	check_data_no_timeout(&dri, &frame);
 
+	tbcm_360_3000_he_dri_set_defaults(&dri);
+
+	tbcm_360_3000_he_dri_read_frame(&dri, &frame);
+	tbcm_360_3000_he_dri_update(&dri, 0U);
+	tbcm_360_3000_he_dri_read_frame(&dri, &frame);
+	tbcm_360_3000_he_dri_update(&dri, 0U);
+	tbcm_360_3000_he_dri_read_frame(&dri, &frame);
+
 	return 0;
 }

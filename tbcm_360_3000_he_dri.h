@@ -303,6 +303,7 @@ void _tbcm_360_3000_he_dri_writer_send_query(struct tbcm_360_3000_he_dri *self)
 		self->_writer.frame.len = 6U;
 		_tbcm_360_3000_he_dri_binarize_serial_no(self,
 						     self->_writer.frame.data);
+		self->_writer.serial_no_timer_ms = 0U;
 	}
 }
 
@@ -313,6 +314,7 @@ void _tbcm_360_3000_he_dri_writer_send_settings(
 		self->_writer.busy  = true;
 		self->_writer.frame = self->_writer.x352;
 		self->_writer.frame.data[0] = self->_device_id;
+		self->_writer.settings_timer_ms = 0U;
 	}
 }
 
@@ -325,7 +327,6 @@ void _tbcm_360_3000_he_dri_writer_update(struct tbcm_360_3000_he_dri *self,
 
 	if (self->_writer.serial_no_timer_ms >=
 		            TBCM_360_3000_HE_DRI_SERIAL_NO_QUERY_INTERVAL_MS) {
-		self->_writer.serial_no_timer_ms = 0U;
 		_tbcm_360_3000_he_dri_writer_send_query(self);
 	}
 
@@ -335,7 +336,6 @@ void _tbcm_360_3000_he_dri_writer_update(struct tbcm_360_3000_he_dri *self,
 
 		if (self->_writer.settings_timer_ms >=
 				   TBCM_360_3000_HE_DRI_SETTINGS_INTERVAL_MS) {
-			self->_writer.settings_timer_ms = 0U;
 			_tbcm_360_3000_he_dri_writer_send_settings(self);
 		}
 	}
