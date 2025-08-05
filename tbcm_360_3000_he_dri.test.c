@@ -74,7 +74,7 @@ int main()
 
 	/* Should succed */
 	frame.data[5] = 0x00U;
-	assert(tbcm_360_3000_he_dri_write_frame(&dri, &frame) == false);
+	assert(tbcm_360_3000_he_dri_write_frame(&dri, &frame) == true);
 	assert(tbcm_360_3000_he_dri_update(&dri, 0U) ==
 					TBCM_360_3000_HE_DRI_EVENT_SERIAL_NO);
 	printf("Discovered device serial number: %s\n",
@@ -127,8 +127,8 @@ int main()
 	assert(dri._reader.data.rflags == 1U); 
 
 	/* Check busy */
-	assert(tbcm_360_3000_he_dri_write_frame(&dri, &frame) == false);
 	assert(tbcm_360_3000_he_dri_write_frame(&dri, &frame) == true);
+	assert(tbcm_360_3000_he_dri_write_frame(&dri, &frame) == false);
 
 	/* Check data reception timeout (save snapshot) */
 	dri_snapshot = dri;
