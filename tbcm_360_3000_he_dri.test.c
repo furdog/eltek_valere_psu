@@ -1,7 +1,10 @@
-#include "tbcm_360_3000_he_dri.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#define TBCM_360_3000_HE_DRI_LOG(v) {printf("\x1b" "[1;33m");\
+				     printf v; printf("\x1b" "[0m");}
+#include "tbcm_360_3000_he_dri.h"
 
 struct tbcm_360_3000_he_dri dri;
 

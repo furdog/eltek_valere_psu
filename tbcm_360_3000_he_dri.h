@@ -148,12 +148,62 @@ struct tbcm_360_3000_he_dri {
 	uint8_t _device_id;
 
 	/* DEBUG */
-	int32_t _fault_line;
+	int32_t  _fault_line;
+	uint32_t _time_up_ms;
 };
 
 /******************************************************************************
  * PRIVATE
  *****************************************************************************/
+/* Debugging tools */
+#ifndef TBCM_360_3000_HE_DRI_LOG
+#define TBCM_360_3000_HE_DRI_LOG(v)
+#endif
+
+void _tbcm_360_3000_he_dri_dbg_event(struct tbcm_360_3000_he_dri *self,
+				     enum tbcm_360_3000_he_dri_event event)
+{
+	const char *ev_names[] = {
+		"TBCM_360_3000_HE_DRI_EVENT_NONE",
+		"TBCM_360_3000_HE_DRI_EVENT_SERIAL_NO",
+		"TBCM_360_3000_HE_DRI_EVENT_DEVICE_ID",
+		"TBCM_360_3000_HE_DRI_EVENT_ESTABLISHED",
+		"TBCM_360_3000_HE_DRI_EVENT_FAULT"};
+
+	(void)self;
+	(void)event;
+
+	TBCM_360_3000_HE_DRI_LOG(("t=%10u: %s", self->_time_up_ms,
+				  ev_names[(uint8_t)event]));
+
+	if (event == TBCM_360_3000_HE_DRI_EVENT_FAULT) {
+		TBCM_360_3000_HE_DRI_LOG((" at line %i", self->_fault_line));
+	}
+
+	TBCM_360_3000_HE_DRI_LOG(("\n"));
+}
+
+void _tbcm_360_3000_he_dri_dbg_frame(struct tbcm_360_3000_he_dri *self,
+				     struct tbcm_360_3000_he_dri_frame *frame,
+				     bool is_rx)
+{
+	uint8_t i;
+
+	(void)self;
+	(void)frame;
+	(void)is_rx;
+
+	TBCM_360_3000_HE_DRI_LOG(("t=%10u: FRAME(%s), ID:%Xh, LEN:%u, DATA: ",
+				  self->_time_up_ms, is_rx ? "RX" : "TX",
+				  frame->id, frame->len));
+
+	for (i = 0; i < frame->len; i++) {
+		TBCM_360_3000_HE_DRI_LOG(("%02X ", frame->data[i]));
+	}
+
+	TBCM_360_3000_HE_DRI_LOG(("\n"));
+}
+
 /* Serial number related methods */
 
 void _tbcm_360_3000_he_dri_stringify_serial_no(
@@ -314,6 +364,8 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 			break;
 		}
 
+		self->_reader.x353 = self->_reader.frame;
+
 		/* TODO PARSE FRAME */
 
 		self->_reader.rflags |= 1U << 0U;
@@ -325,6 +377,8 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 			break;
 		}
 
+		self->_reader.x354 = self->_reader.frame;
+
 		/* TODO PARSE FRAME */
 
 		self->_reader.rflags |= 1U << 1U;
@@ -335,6 +389,8 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 		if (self->_reader.frame.data[0] != self->_device_id) {
 			break;
 		}
+
+		self->_reader.x355 = self->_reader.frame;
 
 		/* TODO PARSE FRAME */
 
@@ -431,6 +487,7 @@ void tbcm_360_3000_he_dri_init(struct tbcm_360_3000_he_dri *self)
 
 	/* DEBUG */
 	self->_fault_line = -1;
+	self->_time_up_ms =  0U;
 }
 
 /* Serial number */
@@ -463,7 +520,7 @@ void tbcm_360_3000_he_dri_ack_serial_no(struct tbcm_360_3000_he_dri *self,
 		self->_reader.state =
 				   TBCM_360_3000_HE_DRI_READER_STATE_DEVICE_ID;
 		self->_reader.busy  = false;
-	} else {
+	} else { /* serial is not valid */
 		self->_state = TBCM_360_3000_HE_DRI_STATE_FAULT;
 		self->_fault_line = __LINE__;
 	}
@@ -532,6 +589,9 @@ bool tbcm_360_3000_he_dri_write_frame(struct tbcm_360_3000_he_dri *self,
 	if (accept_frame) {
 		self->_reader.frame = *frame;
 		self->_reader.busy  = true;
+
+		_tbcm_360_3000_he_dri_dbg_frame(self, &self->_reader.frame,
+						true);
 	}
 
 	return accept_frame;
@@ -545,9 +605,83 @@ bool tbcm_360_3000_he_dri_read_frame(struct tbcm_360_3000_he_dri *self,
 	if (has_frame) {
 		*frame             = self->_writer.frame;
 		self->_writer.busy = false;
+
+		_tbcm_360_3000_he_dri_dbg_frame(self, &self->_writer.frame,
+						false);
 	}
 
 	return has_frame;
+}
+
+/* Setters */
+
+void tbcm_360_3000_he_dri_set_charging_mode(struct tbcm_360_3000_he_dri *self,
+					    uint8_t val)
+{
+	/* 0 - charging disabled, 1 - charging enabled
+	 * Probably does select constant voltage or constant current mode? */
+	self->_writer.x352.data[1] = val;
+}
+
+void tbcm_360_3000_he_dri_set_power_W(struct tbcm_360_3000_he_dri *self,
+				      float val)
+{
+	(void)self;
+	(void)val;
+}
+
+void tbcm_360_3000_he_dri_set_voltage_V(struct tbcm_360_3000_he_dri *self,
+					float val)
+{
+	float clamped = val;
+	uint16_t raw;
+
+	if (val < 0.0f) {
+		clamped = 0.0f;
+	}
+
+	/* voltage 0V - ?V scaled by 10x */
+	raw = (uint16_t)(clamped * 10.0);
+
+	self->_writer.x352.data[4] = (raw >> 8) & 0x0FU;
+	self->_writer.x352.data[5] = (raw >> 0) & 0x0FU;
+}
+
+void tbcm_360_3000_he_dri_set_current_A(struct tbcm_360_3000_he_dri *self,
+					float val)
+{
+	float clamped = val;
+	uint16_t raw  = 0U;
+
+	if (val > 10.0f) {
+		clamped = 10.0f;
+	}
+
+	if (val < 0.0f) {
+		clamped = 0.0f;
+	}
+
+	/* percents 0 - 100% scaled by 10x */
+	raw = (uint16_t)(clamped * 100.0f);
+
+	/* We're setting power ratio here from 0 to 100%
+	 * have no idea what does it means, but actual current value field
+	 * has no effect on current output. Maybe its because constant voltage
+	 * mode is set? TODO specify behaviour */
+	self->_writer.x352.data[2] = (raw >> 8) & 0x0FU;
+	self->_writer.x352.data[3] = (raw >> 0) & 0x0FU;
+
+	/* Actual current field */
+	self->_writer.x352.data[6] = 0U;
+	self->_writer.x352.data[7] = 0U;
+}
+
+void tbcm_360_3000_he_dri_set_defaults(struct tbcm_360_3000_he_dri *self)
+{
+	tbcm_360_3000_he_dri_set_voltage_V(self, 250.0f);
+	tbcm_360_3000_he_dri_set_current_A(self, 0.0f);
+	tbcm_360_3000_he_dri_set_power_W(self, 0.0f);
+	tbcm_360_3000_he_dri_set_charging_mode(self, 0U);
 }
 
 /* Update */
@@ -619,6 +753,11 @@ enum tbcm_360_3000_he_dri_event tbcm_360_3000_he_dri_update(
 
 	default:
 		break;
+	}
+
+	self->_time_up_ms += delta_time_ms;
+	if (e != TBCM_360_3000_HE_DRI_EVENT_NONE) {
+		_tbcm_360_3000_he_dri_dbg_event(self, e);
 	}
 
 	return e;
