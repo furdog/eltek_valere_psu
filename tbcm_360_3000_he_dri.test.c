@@ -135,6 +135,7 @@ int main()
 
 	/* Check data reception timeout (save snapshot) */
 	dri_snapshot = dri;
+	printf("Snapshot saved\n");
 
 	assert(tbcm_360_3000_he_dri_update(&dri, 4999U) == 
 					      TBCM_360_3000_HE_DRI_EVENT_NONE);
@@ -144,6 +145,7 @@ int main()
 
 	/* Check data reception timeout never triggers when all data avail */
 	dri = dri_snapshot;
+	printf("Snapshot loaded\n");
 	check_data_no_timeout(&dri, &frame);
 	check_data_no_timeout(&dri, &frame);
 	check_data_no_timeout(&dri, &frame);
@@ -151,7 +153,13 @@ int main()
 	tbcm_360_3000_he_dri_set_defaults(&dri);
 
 	tbcm_360_3000_he_dri_read_frame(&dri, &frame);
+	printf("%i\n", dri._writer.serial_no_timer_ms);
+
 	tbcm_360_3000_he_dri_update(&dri, 0U);
+
+	printf("%i\n", dri._writer.busy);
+	printf("%i\n", dri._writer.serial_no_timer_ms);
+
 	tbcm_360_3000_he_dri_read_frame(&dri, &frame);
 	tbcm_360_3000_he_dri_update(&dri, 0U);
 	tbcm_360_3000_he_dri_read_frame(&dri, &frame);
