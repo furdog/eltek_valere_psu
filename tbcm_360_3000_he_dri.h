@@ -461,6 +461,7 @@ void _tbcm_360_3000_he_dri_reader_update(struct tbcm_360_3000_he_dri *self,
 		    self->_reader.link_timeout_ms) {
 			self->_reader.state =
 				     TBCM_360_3000_HE_DRI_READER_STATE_TIMEOUT;
+			self->_fault_line = __LINE__;
 		}
 
 		self->_reader.busy = false;
