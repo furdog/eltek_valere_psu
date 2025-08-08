@@ -643,8 +643,8 @@ void tbcm_360_3000_he_dri_set_voltage_V(struct tbcm_360_3000_he_dri *self,
 	/* voltage 0V - ?V scaled by 10x */
 	raw = (uint16_t)(clamped * 10.0);
 
-	self->_writer.x352.data[4] = (raw >> 8) & 0x0FU;
-	self->_writer.x352.data[5] = (raw >> 0) & 0x0FU;
+	self->_writer.x352.data[4] = (raw >> 8) & 0xFFU;
+	self->_writer.x352.data[5] = (raw >> 0) & 0xFFU;
 }
 
 void tbcm_360_3000_he_dri_set_current_A(struct tbcm_360_3000_he_dri *self,
@@ -668,8 +668,8 @@ void tbcm_360_3000_he_dri_set_current_A(struct tbcm_360_3000_he_dri *self,
 	 * have no idea what does it means, but actual current value field
 	 * has no effect on current output. Maybe its because constant voltage
 	 * mode is set? TODO specify behaviour */
-	self->_writer.x352.data[2] = (raw >> 8) & 0x0FU;
-	self->_writer.x352.data[3] = (raw >> 0) & 0x0FU;
+	self->_writer.x352.data[2] = (raw >> 8) & 0xFFU;
+	self->_writer.x352.data[3] = (raw >> 0) & 0xFFU;
 
 	/* Actual current field */
 	self->_writer.x352.data[6] = 0U;
