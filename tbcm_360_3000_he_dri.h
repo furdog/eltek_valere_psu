@@ -355,7 +355,8 @@ void _tbcm_360_3000_he_dri_reader_init(struct tbcm_360_3000_he_dri *self)
 	self->_reader.link_timer_ms   = 0U;
 }
 
-void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
+void _tbcm_360_3000_he_dri_reader_accept_data(
+					     struct tbcm_360_3000_he_dri *self)
 {
 	switch (self->_reader.frame.id) {
 	case 0x353U:
@@ -366,7 +367,9 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 
 		self->_reader.x353 = self->_reader.frame;
 
-		/* TODO PARSE FRAME */
+		/* 0 1 2 3 4 5 6 7, MSB first */
+		/* byte 6, 7 - output voltage * 10 (assumed) */
+		/* byte 4, 5 - output current * 10 (assumed) */
 
 		self->_reader.rflags |= 1U << 0U;
 
@@ -379,7 +382,11 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 
 		self->_reader.x354 = self->_reader.frame;
 
-		/* TODO PARSE FRAME */
+		/* 0 1 2 3 4 5 6 7 MSB first */
+		/* byte 1 temp1 celsius * 1 (assumed) */
+		/* byte 2 temp2 celsius * 1 (assumed) */
+		/* byte 3?, 4 input voltage * 1 (assumed) */
+		/* byte 7 has to do something with input voltage too */
 
 		self->_reader.rflags |= 1U << 1U;
 
@@ -392,7 +399,7 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 
 		self->_reader.x355 = self->_reader.frame;
 
-		/* TODO PARSE FRAME */
+		/* Unknown, all zeros, maybe error flags? */
 
 		self->_reader.rflags |= 1U << 2U;
 
@@ -403,9 +410,9 @@ void _tbcm_360_3000_he_dri_reader_parse_data(struct tbcm_360_3000_he_dri *self)
 	}
 
 	/* Reset timeout timer if all frames were got */
-	if (self->_reader.rflags == 7U) {
+	if ((self->_reader.rflags & 7U) == 7U) {
 		self->_reader.link_timer_ms = 0U;
-		self->_reader.rflags        = 0U;
+		self->_reader.rflags        = 8U; /* All frames were got */
 
 		/* We can send settings at this point */
 		self->_writer.send_settings = true;
@@ -453,7 +460,7 @@ void _tbcm_360_3000_he_dri_reader_update(struct tbcm_360_3000_he_dri *self,
 		self->_reader.link_timer_ms += delta_time_ms;
 
 		if (self->_reader.busy) {
-			_tbcm_360_3000_he_dri_reader_parse_data(self);
+			_tbcm_360_3000_he_dri_reader_accept_data(self);
 		}
 
 		/* Check for timeout */
@@ -662,8 +669,10 @@ void tbcm_360_3000_he_dri_set_current_A(struct tbcm_360_3000_he_dri *self,
 		clamped = 0.0f;
 	}
 
-	/* percents 0 - 100% scaled by 10x */
-	raw = (uint16_t)(clamped * 100.0f);
+	/* percents 0 - 100% scaled by 10x
+	 * Tests are inconsistent and actual mul appears to be 75 or so
+	 * (TODO specify, unreliable behaviour) */
+	raw = (uint16_t)(clamped * 75.0f);
 
 	/* We're setting power ratio here from 0 to 100%
 	 * have no idea what does it means, but actual current value field
@@ -685,15 +694,76 @@ void tbcm_360_3000_he_dri_set_defaults(struct tbcm_360_3000_he_dri *self)
 	tbcm_360_3000_he_dri_set_charging_mode(self, 0U);
 }
 
+/* Getters */
+
+float tbcm_360_3000_he_dri_get_out_voltage_V(struct tbcm_360_3000_he_dri *self)
+{
+	uint16_t raw = (int8_t)-1U;
+
+	if ((self->_reader.rflags & 8U) > 0U) {
+		raw |= (uint16_t)self->_reader.x353.data[6] << 8U;
+		raw |= (uint16_t)self->_reader.x353.data[7] << 0U;
+	}
+
+	return raw / 10.0f;
+}
+
+float tbcm_360_3000_he_dri_get_out_current_A(struct tbcm_360_3000_he_dri *self)
+{
+	uint16_t raw = (int8_t)-1U;
+
+	if ((self->_reader.rflags & 8U) > 0U) {
+		raw |= (uint16_t)self->_reader.x353.data[4] << 8U;
+		raw |= (uint16_t)self->_reader.x353.data[5] << 0U;
+	}
+
+	return raw / 10.0f;
+}
+
+/* It's assumed that temp is an integer value, but it's may be incorrect */
+int8_t tbcm_360_3000_he_dri_get_out_temp1(struct tbcm_360_3000_he_dri *self)
+{
+	int8_t raw = (int8_t)-1U;
+
+	if ((self->_reader.rflags & 8U) > 0U) {
+		raw = (int8_t)self->_reader.x354.data[1U];
+	}
+
+	return (float)raw;
+}
+
+int8_t tbcm_360_3000_he_dri_get_out_temp2(struct tbcm_360_3000_he_dri *self)
+{
+	int8_t raw = (int8_t)-1U;
+
+	if ((self->_reader.rflags & 8U) > 0U) {
+		raw = (int8_t)self->_reader.x354.data[2U];
+	}
+
+	return (float)raw;
+}
+
+uint8_t tbcm_360_3000_he_dri_get_in_voltage_V(
+					     struct tbcm_360_3000_he_dri *self)
+{
+	uint8_t raw = (int8_t)-1U;
+
+	if ((self->_reader.rflags & 8U) > 0U) {
+		raw = (int8_t)self->_reader.x354.data[4U];
+	}
+
+	return (float)raw;
+}
+
 /* Update */
 
 void tbcm_360_3000_he_dri_recover_from_fault(
 					     struct tbcm_360_3000_he_dri *self)
 {
 	self->_state = TBCM_360_3000_HE_DRI_STATE_LISTEN_DEVICES;
-	self->_reader.state =
-			   TBCM_360_3000_HE_DRI_READER_STATE_SERIAL_NO;
-	self->_reader.busy  = false;
+	self->_reader.state  = TBCM_360_3000_HE_DRI_READER_STATE_SERIAL_NO;
+	self->_reader.busy   = false;
+	self->_reader.rflags = 0U;
 }
 
 enum tbcm_360_3000_he_dri_event tbcm_360_3000_he_dri_update(
