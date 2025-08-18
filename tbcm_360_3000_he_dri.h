@@ -701,7 +701,7 @@ float tbcm_360_3000_he_dri_get_out_voltage_V(struct tbcm_360_3000_he_dri *self)
 	uint16_t raw = (int8_t)-1U;
 
 	if ((self->_reader.rflags & 8U) > 0U) {
-		raw |= (uint16_t)self->_reader.x353.data[6] << 8U;
+		raw  = (uint16_t)self->_reader.x353.data[6] << 8U;
 		raw |= (uint16_t)self->_reader.x353.data[7] << 0U;
 	}
 
@@ -713,7 +713,7 @@ float tbcm_360_3000_he_dri_get_out_current_A(struct tbcm_360_3000_he_dri *self)
 	uint16_t raw = (int8_t)-1U;
 
 	if ((self->_reader.rflags & 8U) > 0U) {
-		raw |= (uint16_t)self->_reader.x353.data[4] << 8U;
+		raw  = (uint16_t)self->_reader.x353.data[4] << 8U;
 		raw |= (uint16_t)self->_reader.x353.data[5] << 0U;
 	}
 
