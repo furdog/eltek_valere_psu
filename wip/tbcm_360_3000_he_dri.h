@@ -192,9 +192,9 @@ bool tbcm_360_3000_he_dri_frame_set_recv_once(
  *  This descriptor contains all information that is responsible for device
  *  identification. */
 struct tbcm_360_3000_he_dri_device_descriptor {
-	uint8_t serial_no[6]; /**< Device serial number */
-	uint8_t serial_len;   /**< Device serial number length */
-	uint8_t id;	      /**< Device session identifier */
+	uint8_t *serial_no;	/**< Pointer to "serial no" */
+	uint8_t	 serial_no_len; /**< "serial no" length */
+	uint8_t	 id;		/**< Device session identifier */
 };
 
 /*--------------------------------------------------------------- PUBLIC API */
@@ -209,10 +209,10 @@ void tbcm_360_3000_he_dri_device_descriptor_init(
 {
 	assert(self);
 
-	(void)memset(self->serial_no, 0u, 6u);
+	self->serial_no = NULL;
 
-	self->serial_len = 0u;
-	self->id	 = 0u;
+	self->serial_no_len = 0u;
+	self->id	    = 0u;
 }
 #endif /* TBCM_360_3000_HE_DRI_IMPLEMENTATION */
 
@@ -298,13 +298,13 @@ bool tbcm_360_3000_he_dri_writer_set_serial_no(
     struct tbcm_360_3000_he_dri_writer *self, const uint8_t *serial_no,
     const uint8_t serial_no_len)
 {
-	bool valid = false;
+	bool success = false;
 
 	assert(self && serial_no);
 
 	/* Validate state and descriptor serial no len */
 	if ((self->_flags == 0u) && (serial_no_len == 6u)) {
-		valid = true;
+		success = true;
 
 		(void)memcpy(self->_x351.data, serial_no, serial_no_len);
 		/*self->_x352.data[0] = desc->id;*/
@@ -316,20 +316,20 @@ bool tbcm_360_3000_he_dri_writer_set_serial_no(
 		self->_flags |= _TBCM_360_3000_HE_DRI_WRITER_FLAGS_ALLOW_X351;
 	}
 
-	return valid;
+	return success;
 }
 
 bool tbcm_360_3000_he_dri_writer_set_id(
     struct tbcm_360_3000_he_dri_writer *self, const uint8_t id)
 {
-	bool valid = false;
+	bool success = false;
 
 	assert(self);
 
 	/* Validate state */
 	if (self->_flags ==
 	    (uint8_t)_TBCM_360_3000_HE_DRI_WRITER_FLAGS_ALLOW_X351) {
-		valid = true;
+		success = true;
 
 		self->_x352.data[0] = id;
 
@@ -339,27 +339,27 @@ bool tbcm_360_3000_he_dri_writer_set_id(
 		self->_flags |= _TBCM_360_3000_HE_DRI_WRITER_FLAGS_ALLOW_X352;
 	}
 
-	return valid;
+	return success;
 }
 
 bool tbcm_360_3000_he_dri_writer_pop_tx_frame(
     struct tbcm_360_3000_he_dri_writer *self,
     struct tbcm_360_3000_he_dri_frame  *frame)
 {
-	bool has_frame = false;
+	bool success = false;
 
 	assert(self && frame);
 
 	if (tbcm_360_3000_he_dri_frame_reset_dirty(&self->_x351)) {
 		*frame	  = self->_x351;
-		has_frame = true;
+		success = true;
 	} else if (tbcm_360_3000_he_dri_frame_reset_dirty(&self->_x352)) {
 		*frame	  = self->_x352;
-		has_frame = true;
+		success = true;
 	} else {
 	}
 
-	return has_frame;
+	return success;
 }
 
 enum tbcm_360_3000_he_dri_writer_event
@@ -420,6 +420,9 @@ enum tbcm_360_3000_he_dri_reader_event {
 	/** Discovered new device */
 	TBCM_360_3000_HE_DRI_READER_EVENT_DISCOVERY,
 
+	/** New device ID has been found */
+	TBCM_360_3000_HE_DRI_READER_EVENT_FOUND_ID,
+
 	/** RX timeout */
 	TBCM_360_3000_HE_DRI_READER_EVENT_TIMEOUT
 };
@@ -428,6 +431,9 @@ enum tbcm_360_3000_he_dri_reader_event {
 enum _tbcm_360_3000_he_dri_reader_state {
 	/** Device discovery state */
 	_TBCM_360_3000_HE_DRI_READER_STATE_DISCOVERY,
+
+	/** After device discovered look for its id */
+	_TBCM_360_3000_HE_DRI_READER_STATE_SEEK_ID,
 
 	/** Main state, where all checks performed */
 	_TBCM_360_3000_HE_DRI_READER_STATE_SERVING,
@@ -438,11 +444,8 @@ enum _tbcm_360_3000_he_dri_reader_state {
 
 /** RX flags that indicate frame presence in RX queue */
 enum _tbcm_360_3000_he_dri_reader_flags {
-	_TBCM_360_3000_HE_DRI_READER_FLAGS_GOT_X350 = (1u << 1u),
-	_TBCM_360_3000_HE_DRI_READER_FLAGS_GOT_X353 = (1u << 2u),
-	_TBCM_360_3000_HE_DRI_READER_FLAGS_GOT_X354 = (1u << 3u),
-	_TBCM_360_3000_HE_DRI_READER_FLAGS_GOT_X355 = (1u << 4u),
-	_TBCM_360_3000_HE_DRI_READER_FLAGS_GOT_ALL  = (1u << 5u)
+	/** Reader is busy processing the frame */
+	_TBCM_360_3000_HE_DRI_READER_FLAGS_BUSY = 1u
 };
 
 /** Main reader instance */
@@ -468,12 +471,15 @@ void tbcm_360_3000_he_dri_reader_init(
  *  Returns false if busy. May reset frame dirty flag (if it was consumed)
  */
 bool tbcm_360_3000_he_dri_reader_push_rx_frame(
-    struct tbcm_360_3000_he_dri_reader	    *self,
-    struct tbcm_360_3000_he_dri_frame *frame);
+    struct tbcm_360_3000_he_dri_reader *self,
+    struct tbcm_360_3000_he_dri_frame  *frame);
 
-/** Returns length and pointer to device serial no, if available */
-uint8_t tbcm_360_3000_he_dri_reader_get_serial_no(
-    struct tbcm_360_3000_he_dri_reader *self, const uint8_t **serial_no);
+/** Get device serial no and put it into descriptor.
+ *  Must be called only after TBCM_360_3000_HE_DRI_READER_EVENT_DISCOVERY.
+ *  Returns true on success. */
+bool tbcm_360_3000_he_dri_reader_get_serial_no(
+    struct tbcm_360_3000_he_dri_reader		  *self,
+    struct tbcm_360_3000_he_dri_device_descriptor *desc);
 
 /** Accept discovered device. Returns false if in invalid state */
 bool tbcm_360_3000_he_dri_reader_accept_serial_no(
@@ -481,6 +487,21 @@ bool tbcm_360_3000_he_dri_reader_accept_serial_no(
 
 /** Reject discovered device. Returns false if in invalid state */
 bool tbcm_360_3000_he_dri_reader_reject_serial_no(
+    struct tbcm_360_3000_he_dri_reader *self);
+
+/** Get device id and put it into descriptor.
+ *  Must be called only after TBCM_360_3000_HE_DRI_READER_EVENT_FOUND_ID.
+ *  Returns true on success */
+bool tbcm_360_3000_he_dri_reader_get_id(
+    struct tbcm_360_3000_he_dri_reader		  *self,
+    struct tbcm_360_3000_he_dri_device_descriptor *desc);
+
+/** Accept device id. Returns false if in invalid state */
+bool tbcm_360_3000_he_dri_reader_accept_id(
+    struct tbcm_360_3000_he_dri_reader *self);
+
+/** Reject device id. Returns false if in invalid state */
+bool tbcm_360_3000_he_dri_reader_reject_id(
     struct tbcm_360_3000_he_dri_reader *self);
 
 /** Main Reader FSM function. Does single step. Returns simple event. */
@@ -512,36 +533,33 @@ bool _tbcm_360_3000_he_dri_reader_validate_id(
     struct tbcm_360_3000_he_dri_reader	    *self,
     const struct tbcm_360_3000_he_dri_frame *frame)
 {
-	bool valid = false;
+	bool success = false;
 
 	assert(self && frame);
 
 	if ((self->_state ==
 	     (uint8_t)_TBCM_360_3000_HE_DRI_READER_STATE_SERVING) &&
 	    (frame->data[0] == self->_x350.data[0])) {
-		valid = true;
+		success = true;
 	}
 
-	return valid;
+	return success;
 }
 
 /** Parse incoming "serial no" message */
-bool _tbcm_360_3000_he_dri_reader_parse_serial_no(
-    struct tbcm_360_3000_he_dri_reader	    *self,
-    struct tbcm_360_3000_he_dri_frame *frame)
+void _tbcm_360_3000_he_dri_reader_parse_serial_no(
+    struct tbcm_360_3000_he_dri_reader *self,
+    struct tbcm_360_3000_he_dri_frame  *frame)
 {
-	bool valid = false;
-	bool busy  = false;
-
 	assert(self && frame);
 
 	/* Skip frame with invalid length */
 	if (frame->len > 6U) {
-		valid = false;
+		/* Ignore frame */
 	}
 	/* The system has not processed previous frame */
 	else if (tbcm_360_3000_he_dri_frame_is_dirty(&self->_x350)) {
-		busy = true;
+		/* Ignore frame */
 	}
 	/* If "serial no" has been marked as "received at least once",
 	 * which basically means it was previously accepted by the user */
@@ -549,45 +567,32 @@ bool _tbcm_360_3000_he_dri_reader_parse_serial_no(
 		/* Check "serial no" */
 		if ((frame->len == self->_x350.len) &&
 		    (memcmp(frame->data, self->_x350.data, frame->len) == 0)) {
-			valid = true;
 
 			/* Reset reception timer to prevent timeout */
 			self->_x350.timer_ms = 0u;
 		}
 	} else {
-		valid = true;
+		/* Register "serial no" in the system. */
+		self->_x350.len = frame->len;
+		memcpy(self->_x350.data, frame->data, self->_x350.len);
 
-		/* Register "serial no" in the system */
-		self->_x350 = *frame;
+		/* Set busy flag to true, so system shall react */
+		self->_flags |= _TBCM_360_3000_HE_DRI_READER_FLAGS_BUSY;
 
-		/* Flag this frame as dirty, so the system will be forced
-		 * to tell user either accept or reject "serial no" */
 		(void)tbcm_360_3000_he_dri_frame_set_dirty(&self->_x350);
 	}
-
-	/* Reset original frame dirty flag,
-	 * to signalize it has been successfully consumed and no further
-	 * processing is needed. */
-	if (valid) {
-		(void)tbcm_360_3000_he_dri_frame_reset_dirty(frame);
-	}
-
-	return busy;
 }
 
 bool tbcm_360_3000_he_dri_reader_push_rx_frame(
-    struct tbcm_360_3000_he_dri_reader	    *self,
-    struct tbcm_360_3000_he_dri_frame *frame)
+    struct tbcm_360_3000_he_dri_reader *self,
+    struct tbcm_360_3000_he_dri_frame  *frame)
 {
-	bool busy = false;
-
 	assert(self && frame);
 
 	switch (frame->id) {
 	/* Got device serial no */
 	case 0x350u:
-		busy =
-		    _tbcm_360_3000_he_dri_reader_parse_serial_no(self, frame);
+		_tbcm_360_3000_he_dri_reader_parse_serial_no(self, frame);
 		break;
 
 	case 0x353u:
@@ -633,12 +638,6 @@ bool tbcm_360_3000_he_dri_reader_push_rx_frame(
 		break;
 
 	case 0x355u:
-		if ((self->_flags &
-		     (uint8_t)_TBCM_360_3000_HE_DRI_READER_FLAGS_GOT_X355) >
-		    0u) {
-			break;
-		}
-
 		/* Validate reader ID */
 		if (!_tbcm_360_3000_he_dri_reader_validate_id(self, frame)) {
 			break;
@@ -656,23 +655,33 @@ bool tbcm_360_3000_he_dri_reader_push_rx_frame(
 		break;
 	}
 
-	return !busy; /* Return true if not busy */
+	return (self->_flags & _TBCM_360_3000_HE_DRI_READER_FLAGS_BUSY) != 0u;
 }
 
-uint8_t tbcm_360_3000_he_dri_reader_get_serial_no(
-    struct tbcm_360_3000_he_dri_reader *self, const uint8_t **serial_no)
+bool tbcm_360_3000_he_dri_reader_get_serial_no(
+    struct tbcm_360_3000_he_dri_reader		  *self,
+    struct tbcm_360_3000_he_dri_device_descriptor *desc)
 {
-	assert(self && serial_no);
+	bool success = false;
 
-	*serial_no = self->_x350.data;
+	assert(self && desc);
 
-	return self->_x350.len;
+	if ((self->_state ==
+	     (uint8_t)_TBCM_360_3000_HE_DRI_READER_STATE_DISCOVERY) &&
+	    tbcm_360_3000_he_dri_frame_is_dirty(&self->_x350)) {
+		desc->serial_no	    = self->_x350.data;
+		desc->serial_no_len = self->_x350.len;
+
+		success = true;
+	}
+
+	return success;
 }
 
 bool tbcm_360_3000_he_dri_reader_accept_serial_no(
     struct tbcm_360_3000_he_dri_reader *self)
 {
-	bool valid = false;
+	bool success = false;
 
 	assert(self);
 
@@ -685,14 +694,115 @@ bool tbcm_360_3000_he_dri_reader_accept_serial_no(
 		/* Mark it processed */
 		(void)tbcm_360_3000_he_dri_frame_reset_dirty(&self->_x350);
 
-		valid = true;
+		/* After serial accept we switch to seek ID mode */
+		self->_state = _TBCM_360_3000_HE_DRI_READER_STATE_SEEK_ID;
+
+		success = true;
 	}
 
-	return valid;
+	return success;
 }
 
-bool tbcm_360_3000_he_dri_reader_reject_serial_no(struct tbcm_360_3000_he_dri_reader *self)
+bool tbcm_360_3000_he_dri_reader_reject_serial_no(
+    struct tbcm_360_3000_he_dri_reader *self)
 {
+	bool success = false;
+
+	assert(self);
+
+	/* We can only reject if we are in discovery and have a pending serial
+	 * no */
+	if ((self->_state ==
+	     (uint8_t)_TBCM_360_3000_HE_DRI_READER_STATE_DISCOVERY) &&
+	    tbcm_360_3000_he_dri_frame_is_dirty(&self->_x350)) {
+
+		/* Re-initialize the frame to clear data, dirty flags,
+		 * and "received once" status. This returns the reader to a
+		 * clean discovery state. */
+		tbcm_360_3000_he_dri_frame_init(&self->_x350, 0x350u, 6u);
+
+		success = true;
+	}
+
+	return success;
+}
+
+bool tbcm_360_3000_he_dri_reader_get_id(
+    struct tbcm_360_3000_he_dri_reader		  *self,
+    struct tbcm_360_3000_he_dri_device_descriptor *desc)
+{
+	bool success = false;
+
+	assert(self && desc);
+
+	if ((self->_state ==
+	     (uint8_t)_TBCM_360_3000_HE_DRI_READER_STATE_SEEK_ID) &&
+	    (tbcm_360_3000_he_dri_frame_is_dirty(&self->_x353) ||
+	     tbcm_360_3000_he_dri_frame_is_dirty(&self->_x354) ||
+	     tbcm_360_3000_he_dri_frame_is_dirty(&self->_x355))) {
+		desc->id = 0u; /* TODO */
+
+		success = true;
+	}
+
+	return success;
+}
+
+bool tbcm_360_3000_he_dri_reader_accept_id(
+    struct tbcm_360_3000_he_dri_reader *self)
+{
+	bool success = false;
+
+	assert(self);
+
+	if ((self->_state ==
+	     (uint8_t)_TBCM_360_3000_HE_DRI_READER_STATE_SEEK_ID) &&
+	    (tbcm_360_3000_he_dri_frame_is_dirty(&self->_x353) ||
+	     tbcm_360_3000_he_dri_frame_is_dirty(&self->_x354) ||
+	     tbcm_360_3000_he_dri_frame_is_dirty(&self->_x355))) {
+		/* TODO */
+		/* Validate frame (set as recv at least once) */
+		/* (void)tbcm_360_3000_he_dri_frame_set_recv_once(&self->_x350);
+		 */
+
+		/* Mark it processed */
+		/* (void)tbcm_360_3000_he_dri_frame_reset_dirty(&self->_x350);
+		 */
+
+		/* After serial accept we switch to seek ID mode */
+		self->_state = _TBCM_360_3000_HE_DRI_READER_STATE_SERVING;
+
+		success = true;
+	}
+
+	return success;
+}
+
+bool tbcm_360_3000_he_dri_reader_reject_id(
+    struct tbcm_360_3000_he_dri_reader *self)
+{
+	bool success = false;
+
+	assert(self);
+
+	/* We can only reject if we are in discovery and have a pending serial
+	 * no */
+	if ((self->_state ==
+	     (uint8_t)_TBCM_360_3000_HE_DRI_READER_STATE_SEEK_ID) &&
+	    (tbcm_360_3000_he_dri_frame_is_dirty(&self->_x353) ||
+	     tbcm_360_3000_he_dri_frame_is_dirty(&self->_x354) ||
+	     tbcm_360_3000_he_dri_frame_is_dirty(&self->_x355))) {
+		/* TODO */
+
+		/* Re-initialize the frame to clear data, dirty flags,
+		 * and "received once" status. This returns the reader to a
+		 * clean discovery state. */
+		/*tbcm_360_3000_he_dri_frame_init(&self->_x350, 0x350u, 6u);*/
+
+		success = true;
+	}
+
+	return success;
 }
 
 enum tbcm_360_3000_he_dri_reader_event
@@ -702,8 +812,6 @@ tbcm_360_3000_he_dri_reader_step(struct tbcm_360_3000_he_dri_reader *self,
 	enum tbcm_360_3000_he_dri_reader_event ev =
 	    TBCM_360_3000_HE_DRI_READER_EVENT_NONE;
 
-	(void)delta_time_ms;
-
 	assert(self);
 
 	switch (self->_state) {
@@ -712,6 +820,24 @@ tbcm_360_3000_he_dri_reader_step(struct tbcm_360_3000_he_dri_reader *self,
 		/* Check if we've received any serial no frame */
 		if (tbcm_360_3000_he_dri_frame_is_dirty(&self->_x350)) {
 			ev = TBCM_360_3000_HE_DRI_READER_EVENT_DISCOVERY;
+
+			/* We're waiting for ACCEPT or REJECT from the user
+			 * at this point */
+		}
+
+		break;
+
+	/* We're accepted device "serial no".
+	 * We're seeking for its ID at this point */
+	case _TBCM_360_3000_HE_DRI_READER_STATE_SEEK_ID:
+		/* Update "serial no" timer to check timeouts */
+		self->_x350.timer_ms += delta_time_ms;
+
+		/* Check if we've received any frame */
+		if (tbcm_360_3000_he_dri_frame_is_dirty(&self->_x353) ||
+		    tbcm_360_3000_he_dri_frame_is_dirty(&self->_x354) ||
+		    tbcm_360_3000_he_dri_frame_is_dirty(&self->_x355)) {
+			ev = TBCM_360_3000_HE_DRI_READER_EVENT_FOUND_ID;
 
 			/* We're waiting for ACCEPT or REJECT from the user
 			 * at this point */
@@ -736,6 +862,8 @@ tbcm_360_3000_he_dri_reader_step(struct tbcm_360_3000_he_dri_reader *self,
 	default:
 		break;
 	}
+
+	/* TODO check timeouts */
 
 	return ev;
 }

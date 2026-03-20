@@ -83,11 +83,13 @@ void tbcm_360_3000_he_dri_writer_test(struct tbcm_360_3000_he_dri_writer *self)
 
 void tbcm_360_3000_he_dri_reader_test(struct tbcm_360_3000_he_dri_reader *self)
 {
-	struct tbcm_360_3000_he_dri_frame frame;
+	struct tbcm_360_3000_he_dri_frame	      frame;
+	struct tbcm_360_3000_he_dri_device_descriptor desc;
 
-	const uint8_t  serial_no[6]   = {0x12u, 0x34u, 0x56u,
-					 0x78u, 0x9Au, 0xBCu};
-	const uint8_t *serial_no_read = NULL;
+	const uint8_t serial_no[6] = {0x12u, 0x34u, 0x56u,
+				      0x78u, 0x9Au, 0xBCu};
+
+	tbcm_360_3000_he_dri_device_descriptor_init(&desc);
 
 	/* Init "serial no" message */
 	tbcm_360_3000_he_dri_frame_init(&frame, 0x350, 6u);
@@ -97,6 +99,8 @@ void tbcm_360_3000_he_dri_reader_test(struct tbcm_360_3000_he_dri_reader *self)
 	       TBCM_360_3000_HE_DRI_READER_EVENT_NONE);
 
 	/* Can't accept anything that was not even received */
+	assert(tbcm_360_3000_he_dri_reader_get_serial_no(self, &desc) ==
+	       false);
 	assert(tbcm_360_3000_he_dri_reader_accept_serial_no(self) == false);
 
 	/* Receive "serial no" */
@@ -108,10 +112,11 @@ void tbcm_360_3000_he_dri_reader_test(struct tbcm_360_3000_he_dri_reader *self)
 	assert(tbcm_360_3000_he_dri_reader_step(self, 0u) ==
 	       TBCM_360_3000_HE_DRI_READER_EVENT_DISCOVERY);
 
-	assert(tbcm_360_3000_he_dri_reader_get_serial_no(
-		   self, &serial_no_read) == 6u);
-	assert(serial_no_read != NULL);
-	assert(memcmp(serial_no_read, serial_no, 6u) == 0);
+	assert(desc.serial_no == NULL);
+	assert(tbcm_360_3000_he_dri_reader_get_serial_no(self, &desc) == true);
+	assert(desc.serial_no != NULL);
+
+	assert(memcmp(desc.serial_no, serial_no, 6u) == 0);
 	assert(tbcm_360_3000_he_dri_reader_accept_serial_no(self) == true);
 
 	assert(tbcm_360_3000_he_dri_reader_step(self, 0u) ==
